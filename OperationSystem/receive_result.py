@@ -21,7 +21,7 @@ class receive_result:
         # Kafka服务地址
         bootstrap_servers = LinkConfig.Servers
         # Kafka主题
-        topic = LinkConfig.Topic1
+        topic = LinkConfig.Topic2
 
         # 创建一个生产者实例
         producer = KafkaProducer(bootstrap_servers=bootstrap_servers)

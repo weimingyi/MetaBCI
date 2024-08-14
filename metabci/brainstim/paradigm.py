@@ -3360,7 +3360,7 @@ def paradigm(
             while cur_stim < 1000 and not event.getKeys(["space"]):
 
                 # Kafka消费者配置
-                consumer = KafkaConsumer(LinkConfig.Topic1, bootstrap_servers=LinkConfig.Servers,
+                consumer = KafkaConsumer(LinkConfig.Topic2, bootstrap_servers=LinkConfig.Servers,
                                          auto_offset_reset='earliest', group_id=str(uuid.uuid4()))
 
                 # 记录上一次接收到消息的时间
