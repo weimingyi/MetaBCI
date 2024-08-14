@@ -3413,9 +3413,5 @@ def paradigm(
                     Stim.keep_stim()
                     print('keep')
 
-
-
-
-
         if inlet:
             MyTherad.stop_feedbackThread()
