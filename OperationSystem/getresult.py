@@ -30,7 +30,7 @@ class getresult:
     def co_stim(self):
         # 图书目录闪烁刺激
         frame_num = 0
-        while frame_num < 120 or (self.result is None):
+        while frame_num < 300 or (self.result is None):
             sf = frame_num % self.VSObject.refresh_rate
             self.VSObject.flash_stimuli_co[sf].draw()
             self.win.flip()

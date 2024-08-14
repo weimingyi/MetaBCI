@@ -22,7 +22,7 @@ def load_cover(path):
         if os.path.isdir(book_name):
             backlist.append(book_name)
     for name_path in backlist:
-        image_path = os.path.join(name_path, 'page_1.png')
+        image_path = os.path.join(name_path, 'page_1.jpg')
         cover_list.append(image_path)
     return cover_list
 
