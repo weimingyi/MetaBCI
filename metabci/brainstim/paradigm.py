@@ -15,10 +15,18 @@ import threading
 from copy import copy
 import random
 from scipy import signal
-from PIL import Image
 
+'''自定义'''
+from PIL import Image, ImageEnhance
+import copy as cp
+from psychopy import core
 
-# prefunctions
+from OperationSystem.getresult import getresult
+from OperationSystem.link_config import LinkConfig
+from kafka import KafkaConsumer
+import json
+import time
+import uuid
 
 
 def sinusoidal_sample(freqs, phases, srate, frames, stim_color):
@@ -72,7 +80,6 @@ def sinusoidal_sample(freqs, phases, srate, frames, stim_color):
                 color[:, ne, 1] = -1
             if stim_color[2] == -1:
                 color[:, ne, 2] = -1
-
     return color
 
 
@@ -295,6 +302,8 @@ class KeyboardInterface(object):
         self.columns = columns
         self.rows = rows
 
+
+
     def config_text(
         self, unit="pix", symbols=None, symbol_height=0, tex_color=[1, 1, 1]
     ):
@@ -494,6 +503,202 @@ class SemiCircle(Circle):
                 for e in range(int(round(self.edges) + 1))
             ]
         )
+
+class READ_SYSTEM(VisualStim):
+    def __init__(self, win, colorSpace="rgb", allowGUI=True):
+        super().__init__(win=win, colorSpace=colorSpace, allowGUI=allowGUI)
+        self.backlist = []
+        self.namelist = []
+        self.cover_list = []
+        self.stim_list = []
+        self.booklist = []
+        self.pagelist = []
+        self.flash_stimuli_co = None
+
+    def get_backlist(self, path):
+        for name in os.listdir(path):
+            book_name = os.path.join(path, name)
+            if os.path.isdir(book_name):
+                self.backlist.append(book_name)
+                self.namelist.append(book_name.split('\\')[-1])
+        return self.namelist
+
+    def get_booklist(self, path):
+        for name in os.listdir(path):
+            book_name = os.path.join(path, name)
+            if os.path.isdir(book_name):
+                self.booklist.append(book_name)
+                page_set = [page for page in os.listdir(book_name) if page.endswith('.jpg')]
+                page_num = len(page_set)
+                self.pagelist.append(page_num)
+
+    def load_cover_co(self, stim_path):
+        self.frames_file_path = stim_path
+        for path in self.backlist:
+            image_path = os.path.join(path, 'page_1.png')
+            self.cover_list.append(image_path)
+
+    '''目录界面刺激生成，若提前使用save_cover.py生成刺激图片则不需调用'''
+    def config_cover(self, path):
+        background_width = 1920
+        background_height = 1080
+        background_image = Image.new('RGB', (background_width, background_height), (0, 0, 0))
+
+        stim_color = [1, 1, 1]
+
+        brightness_values = sinusoidal_sample(
+                                freqs=self.freqs,
+                                phases=self.phases,
+                                srate=self.refresh_rate,
+                                frames=self.stim_frames,
+                                stim_color=stim_color,
+                            )
+
+        for sf in range(self.stim_frames):
+            for i in range(self.n_elements):
+                # 读取封面图片
+                foreground_image = Image.open(self.cover_list[i])
+                # 调节图片大小
+                resized_image = foreground_image.resize((self.stim_length, self.stim_width), 3)
+
+                # 创建亮度增强对象
+                enhancer = ImageEnhance.Brightness(resized_image)
+
+                # 调整亮度（亮度因子大于1表示增加亮度，小于1表示减少亮度）
+                brightened_image = enhancer.enhance(brightness_values[sf, i, 0])
+
+                # 将前景图片粘贴到背景图片的指定位置
+                foreground_width, foreground_height = brightened_image.size
+                center_x = self.stim_pos[i][0]
+                center_y = self.stim_pos[i][1]
+                left = center_x - foreground_width // 2 + background_width // 2
+                top = center_y - foreground_height // 2 + background_height // 2
+                background_image.paste(brightened_image, (int(left), int(top)))
+
+            # 图片存储至指定位置
+            output_path = os.path.join(path, 'cover_images', f'{sf}.jpg')
+            background_image.save(output_path)
+
+    def pic_stim(self, refresh_rate):
+        self.flash_stimuli_co = []
+        for sf in range(refresh_rate):
+            frame_path = os.path.join(self.frames_file_path, '{}.jpg'.format(sf))
+            self.flash_stimuli_co.append(
+                visual.ImageStim(
+                    win=self.win,
+                    units="pix",
+                    image=frame_path,
+                    texRes=48,
+                )
+            )
+
+    def config_color_re(
+        self,
+        refresh_rate,
+        stim_time,
+        stim_color,
+        stimtype="sinusoid",
+        stim_opacities=1,
+        **kwargs
+    ):
+
+        # initialize extra inputs
+        self.refresh_rate = refresh_rate
+        self.stim_time = stim_time
+        self.stim_color = stim_color
+        self.stim_opacities = stim_opacities
+        self.stim_frames = int(stim_time * self.refresh_rate)
+
+        self.n_elements_re = cp.deepcopy(self.n_elements)
+        self.columns_re = cp.deepcopy(self.columns)
+        self.rows_re = cp.deepcopy(self.rows)
+
+        self.stim_pos_re = cp.deepcopy(self.stim_pos)
+        self.stim_length_re = cp.deepcopy(self.stim_length)
+        self.stim_width_re = cp.deepcopy(self.stim_width)
+        self.stim_sizes_re = cp.deepcopy(self.stim_sizes)
+
+        if refresh_rate == 0:
+            self.refresh_rate = np.floor(
+                self.win.getActualFrameRate(nIdentical=20, nWarmUpFrames=20)
+            )
+
+        self.stim_oris = np.zeros((self.n_elements_re,))  # orientation
+        self.stim_sfs = np.zeros((self.n_elements_re,))  # spatial frequency
+        self.stim_contrs = np.ones((self.n_elements_re,))  # contrast
+
+        # check extra inputs
+        if "stim_oris" in kwargs.keys():
+            self.stim_oris = kwargs["stim_oris"]
+        if "stim_sfs" in kwargs.keys():
+            self.stim_sfs = kwargs["stim_sfs"]
+        if "stim_contrs" in kwargs.keys():
+            self.stim_contrs = kwargs["stim_contrs"]
+        if "freqs" in kwargs.keys():
+            self.freqs = kwargs["freqs"]
+        if "phases" in kwargs.keys():
+            self.phases = kwargs["phases"]
+
+        self.stim_oris_re = cp.deepcopy(self.stim_oris)
+        self.stim_sfs_re = cp.deepcopy(self.stim_sfs)
+        self.stim_contrs_re = cp.deepcopy(self.stim_contrs)
+        self.freqs_re = cp.deepcopy(self.freqs)
+        self.phases_re = cp.deepcopy(self.phases)
+
+        # check consistency
+        if stimtype == "sinusoid":
+            self.stim_colors_re = (
+                sinusoidal_sample(
+                    freqs=self.freqs_re,
+                    phases=self.phases_re,
+                    srate=self.refresh_rate,
+                    frames=self.stim_frames,
+                    stim_color=stim_color,
+                )
+                - 1
+            )
+            if self.stim_colors_re[0].shape[0] != self.n_elements_re:
+                raise Exception("Please input correct num of stims!")
+
+        incorrect_frame = self.stim_colors_re.shape[0] != self.stim_frames
+        incorrect_number = self.stim_colors_re.shape[1] != self.n_elements_re
+        if incorrect_frame or incorrect_number:
+            raise Exception("Incorrect color matrix or flash frames!")
+
+        # add flashing targets onto interface
+        self.flash_stimuli_re = []
+        for sf in range(self.stim_frames):
+            self.flash_stimuli_re.append(
+                visual.ElementArrayStim(
+                    win=self.win,
+                    units="pix",
+                    nElements=self.n_elements_re,
+                    sizes=self.stim_sizes_re,
+                    xys=self.stim_pos_re,
+                    colors=self.stim_colors_re[sf, ...],
+                    opacities=self.stim_opacities,
+                    oris=self.stim_oris_re,
+                    sfs=self.stim_sfs_re,
+                    contrs=self.stim_contrs_re,
+                    elementTex=np.ones((64, 64)),
+                    elementMask=None,
+                    texRes=48,
+                )
+            )
+
+        self.pic_read_set = []
+        for book_id in range(8):
+            self.pic_read = []
+            for page in range(1, self.pagelist[book_id] + 1):
+                frame_path = os.path.join(self.booklist[book_id], 'page_{}.jpg'.format(page))
+                self.pic_read.append(
+                    visual.ImageStim(
+                    win=self.win,
+                    image=frame_path,
+                    size=(810, 1080),
+                    pos=(0, 0),
+                    texRes = 48))
+            self.pic_read_set.append(self.pic_read)
 
 
 # standard SSVEP paradigm
@@ -3116,3 +3321,101 @@ def paradigm(
                     VSObject.text_response.draw()
                     iframe += 1
                     win.flip()
+
+    elif pdim == "read_system":
+
+        if inlet:
+            MyTherad = GetPlabel_MyTherad(inlet)
+            MyTherad.feedbackThread()
+
+        # config experiment settings
+        conditions = [{"id": i} for i in range(1)]
+        trials = data.TrialHandler(conditions, nrep, name="experiment", method="random")
+
+        # start routine
+        # episode 1: display initial interface
+        iframe = 0
+        while iframe < int(fps * display_time):
+            init_txt = visual.TextStim(win=win, text='读书系统初始化，请保持放松', height=60, color='white',
+                                       pos=(-160, 0), units='pix')
+            init_txt.draw()
+            iframe += 1
+            win.flip()
+
+        # episode 2: begin to cover_flash
+        if port:
+            port.setData(0)
+
+        Stim = getresult()
+
+        for trial in trials:
+            keys = event.getKeys(["q"])
+            if "q" in keys:
+                MyTherad.stop_feedbackThread()
+                break
+
+            cur_stim = 0
+            cur_result = 0
+            switch_flag = False
+            while cur_stim < 1000 and not event.getKeys(["space"]):
+
+                # Kafka消费者配置
+                consumer = KafkaConsumer(LinkConfig.Topic1, bootstrap_servers=LinkConfig.Servers,
+                                         auto_offset_reset='earliest', group_id=str(uuid.uuid4()))
+
+                # 记录上一次接收到消息的时间
+                last_message_time = time.time()
+
+                # 设置超时时间（秒）
+                timeout = 1
+
+                try:
+                    while True:
+                        msg_pack = consumer.poll(timeout_ms=100, max_records=1)
+
+                        # 检查是否有新消息
+                        if msg_pack:
+                            for tp, messages in msg_pack.items():
+                                for message in messages:
+                                    # 处理消息
+                                    data_array = json.loads(message.value.decode('utf-8'))
+                                    last_message_time = time.time()
+                        else:
+                            # 没有新消息，检查是否超过了设定的超时时间
+                            if (time.time() - last_message_time) > timeout:
+                                print(f"No new messages received for {timeout} seconds. Exiting...")
+                                break
+
+                except KeyboardInterrupt:
+                    print("Consumer interrupted and will exit gracefully.")
+
+                finally:
+                    # 关闭消费者连接
+                    consumer.close()
+                # 接收结果处理
+                if data_array[1] > cur_result:
+                    cur_result = data_array[1]
+                    print('cur_result', cur_result)
+                    switch_flag = True
+                else:
+                    pass
+
+                if switch_flag:
+                    if len(data_array[0]) > 1:
+                        result = data_array[0][-1]
+                    else:
+                        result = data_array[0][0]
+
+                    Stim.cur_stim(VSObject=VSObject, win=win, trial=trial, result=result)
+                    switch_flag = False
+                    print('switch')
+                else:
+                    Stim.keep_stim()
+                    print('keep')
+
+
+
+
+
+        if inlet:
+            MyTherad.stop_feedbackThread()

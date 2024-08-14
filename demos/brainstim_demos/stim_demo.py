@@ -1,8 +1,10 @@
 import math
+import time
 
-from psychopy import monitors
+# from psychopy import monitors
 import numpy as np
 from metabci.brainstim.paradigm import (
+    READ_SYSTEM,
     SSVEP,
     P300,
     MI,
@@ -14,6 +16,22 @@ from metabci.brainstim.paradigm import (
 )
 from metabci.brainstim.framework import Experiment
 from psychopy.tools.monitorunittools import deg2pix
+
+
+'''自定义'''
+import os
+from re_book_stimconfig import BACKLISTConfig, READ_BOOKConfig, REGISTER_Config
+from psychopy import visual, core, monitors
+from OperationSystem.Controlmain import Operation
+
+
+from kafka import KafkaConsumer
+import json
+import uuid
+
+# class receive:
+
+
 
 if __name__ == "__main__":
     mon = monitors.Monitor(
@@ -32,7 +50,7 @@ if __name__ == "__main__":
         bg_color_warm=bg_color_warm,  # 范式选择界面背景颜色[-1~1,-1~1,-1~1]
         screen_id=0,
         win_size=win_size,  # 范式边框大小(像素表示)，默认[1920,1080]
-        is_fullscr=False,  # True全窗口,此时win_size参数默认屏幕分辨率
+        is_fullscr=True,  # True全窗口,此时win_size参数默认屏幕分辨率
         record_frames=False,
         disable_gc=False,
         process_priority="normal",
@@ -41,6 +59,60 @@ if __name__ == "__main__":
     win = ex.get_window()
 
     # q退出范式界面
+
+    """
+    READ_BOOK
+    """
+    current_directory = os.getcwd()
+    cover_images = os.path.join(current_directory, 'picture_set')
+    output_images = os.path.join(current_directory, 'picture_set', 'output_images')
+    coverstim = os.path.join(current_directory, 'picture_set', 'cover_images')
+
+    cur_paradigm = READ_SYSTEM(win=win)
+    cur_paradigm.get_backlist(output_images)
+    cur_paradigm.load_cover_co(coverstim)
+    cur_paradigm.pic_stim(refresh_rate=READ_BOOKConfig.fps)
+
+    cur_paradigm.get_booklist(output_images)
+    cur_paradigm.config_pos(
+        n_elements=READ_BOOKConfig.n_elements,
+        rows=READ_BOOKConfig.rows,
+        columns=READ_BOOKConfig.columns,
+        stim_pos=READ_BOOKConfig.stim_pos,
+        stim_length=READ_BOOKConfig.stim_length,
+        stim_width=READ_BOOKConfig.stim_width,
+    )
+    cur_paradigm.config_text(symbols=READ_BOOKConfig.symbols, tex_color=READ_BOOKConfig.tex_color)
+    cur_paradigm.config_color_re(
+        refresh_rate=READ_BOOKConfig.fps,
+        stim_time=READ_BOOKConfig.stim_time,
+        stimtype="sinusoid",
+        stim_color=READ_BOOKConfig.stim_color,
+        stim_opacities=READ_BOOKConfig.stim_opacities,
+        freqs=READ_BOOKConfig.freqs,
+        phases=READ_BOOKConfig.phases,
+    )
+    cur_paradigm.config_index()
+    cur_paradigm.config_response()
+
+    # 在线实验的标志
+    ex.register_paradigm(
+        "READ_BOOK",
+        paradigm,
+        VSObject=cur_paradigm,
+        bg_color=REGISTER_Config.bg_color,
+        display_time=REGISTER_Config.display_time,
+        index_time=REGISTER_Config.index_time,
+        rest_time=REGISTER_Config.rest_time,
+        response_time=REGISTER_Config.response_time,
+        port_addr=REGISTER_Config.port_addr,
+        nrep=REGISTER_Config.nrep,
+        pdim="read_system",
+        lsl_source_id=REGISTER_Config.lsl_source_id,
+        online=REGISTER_Config.online,
+    )
+
+
     """
     SSVEP
     """
@@ -80,8 +152,8 @@ if __name__ == "__main__":
     index_time = 1  # 提示时长，转移视线
     rest_time = 0.5  # 提示后的休息时长
     response_time = 1  # 在线反馈
-    port_addr = "COM8"  #  0xdefc                                  # 采集主机端口
-    port_addr = None  #  0xdefc
+    port_addr = "COM8"  # 0xdefc                                  # 采集主机端口
+    port_addr = None  # 0xdefc
     nrep = 2  # block数目
     lsl_source_id = "meta_online_worker"  # None                 # source id
     online = False  # True                                       # 在线实验的标志

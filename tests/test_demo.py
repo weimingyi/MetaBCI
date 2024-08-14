@@ -1,6 +1,5 @@
 from .base_tmpl import BaseTmpl
 
-
 def add(a, b):
     return a + b
 
@@ -18,3 +17,5 @@ class TestDemo(BaseTmpl):
 
     def test_minus(self):
         self.assertEqual(1, minus(3, 2))
+
+
